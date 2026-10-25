@@ -65,10 +65,42 @@ li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid 
 .dn{display:flex;gap:20px;align-items:center;flex-wrap:wrap}.dn svg{width:190px;height:190px;flex:none;margin:0 auto}
 .dl{flex:1;min-width:210px}.dl li{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:0;font-size:14px}
 .dot{width:12px;height:12px;border-radius:50%;flex:none}.lb{flex:1}.vl{color:var(--mut);min-width:86px;text-align:right}
-@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+/* PIN lock */
+body.locked .wrap{display:none}
+#lock{display:none;position:fixed;inset:0;z-index:50;background:var(--bg);overflow-y:auto;padding:calc(24px + env(safe-area-inset-top,0px)) 20px calc(24px + env(safe-area-inset-bottom,0px));align-items:center;justify-content:center}
+body.locked #lock{display:flex}
+.lk{width:100%;max-width:320px;text-align:center;margin:auto}
+.lk h2{font:800 24px/1.2 "Fraunces",Georgia,serif;margin:0 0 6px}
+.lk p{margin:0;color:var(--mut);font-size:14px;min-height:42px}
+.lk p.bad{color:var(--out);font-weight:700}
+.dots{display:flex;justify-content:center;gap:16px;margin:18px 0 22px}
+.dots i{width:16px;height:16px;border-radius:50%;border:2px solid var(--pri);transition:background .12s}
+.dots i.on{background:var(--pri)}
+.dots.shake{animation:sh .35s}
+@keyframes sh{20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;justify-items:center}
+.pad button{width:72px;height:72px;border-radius:50%;border:1px solid var(--line);background:var(--surf);color:var(--ink);font:700 24px/1 "Fraunces",Georgia,serif}
+.pad button:active{background:var(--pri);color:var(--priink)}
+.pad .sp{visibility:hidden}
+.pad .bk{font-size:20px;background:none;border-color:transparent}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}.dots.shake{animation:none}}
 </style>
 </head>
-<body>
+<body class="locked">
+<div id="lock" role="dialog" aria-modal="true" aria-labelledby="lt">
+<div class="lk">
+<h2 id="lt">Celengan</h2>
+<p id="ls" aria-live="polite"></p>
+<div class="dots" id="dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<div class="pad" id="pad">
+<button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button>
+<button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button>
+<button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button>
+<button type="button" class="sp" tabindex="-1" aria-hidden="true">0</button><button type="button" data-k="0">0</button><button type="button" class="bk" data-k="x" aria-label="Hapus angka terakhir">⌫</button>
+</div>
+</div>
+</div>
+
 <div class="wrap">
 <header><h1>Celengan</h1><button class="ghost" id="reset" type="button">Hapus semua data</button></header>
 
@@ -247,6 +279,49 @@ rpend=false;r.textContent="Hapus semua data";st={tx:[],goal:{name:"",amount:0}};
 load();$("date").value=today();setType("in");
 if(st.goal.amount){$("gn").value=st.goal.name;$("ga").value=st.goal.amount.toLocaleString("id-ID");$("gd").value=st.goal.date||""}
 render();
+
+/* ===== Sandi 4 angka (permanen) ===== */
+(function(){
+const PK="celengan-pin-v1";
+let mem=null,buf="",first="",busy=false,open=true,stage="enter";
+const getPin=()=>{try{return localStorage.getItem(PK)}catch(e){return mem}};
+const setPin=h=>{mem=h;try{localStorage.setItem(PK,h)}catch(e){}};
+async function hash(p){const t="celengan:"+p;
+try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+catch(e){let h=5381;for(const c of t)h=(h*33+c.charCodeAt(0))>>>0;return"f"+h}}
+const MSG={
+new:["Buat sandi 4 angka","Sandi ini permanen dan tidak bisa diubah. Ingat baik-baik."],
+confirm:["Ulangi sandi","Masukkan sandi yang sama sekali lagi."],
+enter:["Masukkan sandi","Masukkan 4 angka untuk membuka Celengan."]};
+function paint(bad){
+$("lt").textContent=MSG[stage][0];
+const p=$("ls");p.textContent=bad||MSG[stage][1];p.className=bad?"bad":"";
+[...$("dots").children].forEach((d,i)=>d.classList.toggle("on",i<buf.length))}
+function shake(){const d=$("dots");d.classList.remove("shake");void d.offsetWidth;d.classList.add("shake")}
+function unlock(){open=false;document.body.classList.remove("locked");buf=""}
+async function done(){
+busy=true;const h=await hash(buf);
+if(stage==="new"){first=buf;buf="";stage="confirm";paint()}
+else if(stage==="confirm"){
+if(buf===first){setPin(h);unlock()}
+else{buf="";first="";stage="new";shake();paint("Sandi tidak sama. Coba buat lagi.")}}
+else{
+if(h===getPin())unlock();
+else{buf="";shake();paint("Sandi salah. Coba lagi.")}}
+busy=false}
+function press(k){
+if(!open||busy)return;
+if(k==="x")buf=buf.slice(0,-1);
+else if(buf.length<4)buf+=k;
+paint();
+if(buf.length===4)setTimeout(done,150)}
+$("pad").addEventListener("click",e=>{const b=e.target.closest("button[data-k]");if(b)press(b.dataset.k)});
+document.addEventListener("keydown",e=>{
+if(!open)return;
+if(/^\d$/.test(e.key))press(e.key);
+else if(e.key==="Backspace")press("x")});
+stage=getPin()?"enter":"new";
+paint()})();
 </script>
 </body>
 </html>
